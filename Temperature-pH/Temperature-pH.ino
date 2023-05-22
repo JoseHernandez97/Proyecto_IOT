@@ -3,6 +3,7 @@
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
 #include <ESP8266HTTPClient.h>
+#include <ArduinoJson.h>
 
 #define ONE_WIRE_BUS 2
 #define SENSOR_INTERVAL 1000 //300000    // Tiempo de lectura sensores (5 minutos)
@@ -16,6 +17,8 @@ const char* ssid = "Comunicate-Leon";
 const char* password = "darkshadow2125.";
 
 const char* serverURL = "http://123.102.45.34:8080/sensors";
+const char* relay1URL = "http://123.102.45.34:8080/sensors/rele1";
+const char* relay2URL = "http://123.102.45.34:8080/sensors/rele2";
 
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
@@ -28,6 +31,8 @@ unsigned long lastSendTime = 0;
 
 bool relay1State = false;
 bool relay2State = false;
+
+WiFiClient client; // Declarar instancia de WiFiClient fuera del bucle loop
 
 void setup() {
   Serial.begin(9600);
@@ -96,7 +101,6 @@ void loop() {
     jsonData += "}";
 
     // Conexion Servidor
-    WiFiClient client;
     HTTPClient http;
     http.begin(client, serverURL);
     http.addHeader("Content-Type", "application/json");
@@ -111,9 +115,56 @@ void loop() {
       Serial.print("Error en la solicitud. Código de error HTTP: ");
       Serial.println(httpResponseCode);
     }
-
     http.end();
   }
+
+  // Recibir JSON para el relé 1
+  HTTPClient httpRelay1;
+  httpRelay1.begin(client, relay1URL);
+  int httpResponseCodeRelay1 = httpRelay1.GET();
+  if (httpResponseCodeRelay1 > 0) {
+    String responseRelay1 = httpRelay1.getString();
+    
+    //  JSON para el relé 1
+    DynamicJsonDocument jsonRelay1(256);
+    deserializeJson(jsonRelay1, responseRelay1);
+    int relay1Value = jsonRelay1["Value"];
+
+    // Controlar el relé 1 
+    if (relay1Value == 1) {
+      digitalWrite(RELAY_1_PIN, RELAY_ON);
+    } else {
+      digitalWrite(RELAY_1_PIN, RELAY_OFF);
+    }
+  } else {
+    Serial.print("Error en la solicitud. Código de error HTTP: ");
+    Serial.println(httpResponseCodeRelay1);
+  }
+  httpRelay1.end();
+
+  // Recibir JSON para el relé 2
+  HTTPClient httpRelay2;
+  httpRelay2.begin(client, relay2URL);
+  int httpResponseCodeRelay2 = httpRelay2.GET();
+  if (httpResponseCodeRelay2 > 0) {
+    String responseRelay2 = httpRelay2.getString();
+
+    // JSON  relé 2
+    DynamicJsonDocument jsonRelay2(256);
+    deserializeJson(jsonRelay2, responseRelay2);
+    int relay2Value = jsonRelay2["Value"];
+
+    // Controlar el relé 2
+    if (relay2Value == 1) {
+      digitalWrite(RELAY_2_PIN, RELAY_ON);
+    } else {
+      digitalWrite(RELAY_2_PIN, RELAY_OFF);
+    }
+  } else {
+    Serial.print("Error en la solicitud. Código de error HTTP: ");
+    Serial.println(httpResponseCodeRelay2);
+  }
+  httpRelay2.end();
 
   delay(1000); 
 }
