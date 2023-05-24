@@ -119,7 +119,7 @@ void loop() {
   }
 
   // Recibir JSON para el relé 1
-  HTTPClient httpRelay1;
+  /*HTTPClient httpRelay1;
   httpRelay1.begin(client, relay1URL);
   int httpResponseCodeRelay1 = httpRelay1.GET();
   if (httpResponseCodeRelay1 > 0) {
@@ -165,6 +165,6 @@ void loop() {
     Serial.println(httpResponseCodeRelay2);
   }
   httpRelay2.end();
-
-  delay(1000); 
+  */
+  delay(100); 
 }
