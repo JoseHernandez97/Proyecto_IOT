@@ -16,9 +16,9 @@
 const char* ssid = "Comunicate-Leon";
 const char* password = "darkshadow2125.";
 
-const char* serverURL = "http://123.102.45.34:8080/sensors";
-const char* relay1URL = "http://123.102.45.34:8080/sensors/rele1";
-const char* relay2URL = "http://123.102.45.34:8080/sensors/rele2";
+const char* serverURL = "http://monitoreos.purplelabsoft.com/insert/";
+const char* relay1URL = "endpoint encendido o pagado rele1";
+const char* relay2URL = "endpoint encendido o pagado rele2";
 
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
@@ -29,8 +29,6 @@ float pH_value;
 unsigned long lastSensorTime = 0;
 unsigned long lastSendTime = 0;
 
-bool relay1State = false;
-bool relay2State = false;
 
 WiFiClient client; // Declarar instancia de WiFiClient fuera del bucle loop
 
@@ -64,19 +62,15 @@ void loop() {
     // Rele 1 Temperatura
     if (tempC >= 30.0) {
       digitalWrite(RELAY_1_PIN, RELAY_ON);
-      
     } else {
       digitalWrite(RELAY_1_PIN, RELAY_OFF);
-      
     }
 
     // Rele 2 pH
     if (pH_value <= 6.0) {
       digitalWrite(RELAY_2_PIN, RELAY_ON);
-      relay2State = true;
     } else {
       digitalWrite(RELAY_2_PIN, RELAY_OFF);
-      relay2State = false;
     }
 
     Serial.print("Temperatura: ");
@@ -117,7 +111,6 @@ void loop() {
     }
     http.end();
   }
-
   // Recibir JSON para el relé 1
   HTTPClient httpRelay1;
   httpRelay1.begin(client, relay1URL);
@@ -165,6 +158,5 @@ void loop() {
     Serial.println(httpResponseCodeRelay2);
   }
   httpRelay2.end();
-  
   delay(100); 
 }
