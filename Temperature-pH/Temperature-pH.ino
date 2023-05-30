@@ -5,11 +5,10 @@
 #include <ESP8266HTTPClient.h>
 #include <ArduinoJson.h>
 
-#define ONE_WIRE_BUS 2
-#define SENSOR_INTERVAL 1000 //300000    // Tiempo de lectura sensores (5 minutos)
-#define SEND_INTERVAL 10000 //900000      // Tiempo envío de datos al servidor (15 minutos)
-#define RELAY_1_PIN 12            // Relé 1
-#define RELAY_2_PIN 13            // Relé 2
+#define ONE_WIRE_BUS D2
+#define SENSOR_INTERVAL 3000 //300000    // Tiempo de lectura sensores (5 minutos)
+#define RELAY_1_PIN D5            // Relé 1
+#define RELAY_2_PIN D6            // Relé 2
 #define RELAY_ON LOW              // Rele Apagado
 #define RELAY_OFF HIGH            // Rele Encendido
 
@@ -25,6 +24,7 @@ DallasTemperature sensors(&oneWire);
 
 const int pH_pin = A0;
 float pH_value;
+float pH_calibration_offset = -5.5;
 
 unsigned long lastSensorTime = 0;
 unsigned long lastSendTime = 0;
@@ -34,6 +34,7 @@ WiFiClient client; // Declarar instancia de WiFiClient fuera del bucle loop
 
 void setup() {
   Serial.begin(9600);
+  pinMode(pH_pin, INPUT);
   pinMode(RELAY_1_PIN, OUTPUT);
   pinMode(RELAY_2_PIN, OUTPUT);
   
@@ -50,13 +51,14 @@ void setup() {
 void loop() {
   unsigned long currentTime = millis();
 
-  // Lectura Sensores (Cada 5 Min)
+  // Lectura Sensores (Cada 3S )
   if (currentTime - lastSensorTime >= SENSOR_INTERVAL) {
     sensors.requestTemperatures();
     float tempC = sensors.getTempCByIndex(0);
 
-    int pH = analogRead(pH_pin);
-    pH_value = map(pH, 0, 1023, 0, 14);
+    int pH_raw = analogRead(pH_pin);
+    pH_value = map(pH_raw, 0, 1023, 0, 140) / 10.0;
+    pH_value += pH_calibration_offset;
     lastSensorTime = currentTime;
 
     // Rele 1 Temperatura
@@ -79,13 +81,6 @@ void loop() {
 
     Serial.print("pH: ");
     Serial.println(pH_value);
-  }
-
-  // Enviar datos al servidor cada 15 minutos
-  if (currentTime - lastSendTime >= SEND_INTERVAL) {
-    lastSendTime = currentTime;
-
-    // Crear el objeto JSON con los datos
     String jsonData = "{";
     jsonData += "\"temperatura\": ";
     jsonData += String(sensors.getTempCByIndex(0));
@@ -111,6 +106,7 @@ void loop() {
     }
     http.end();
   }
+  /*
   // Recibir JSON para el relé 1
   HTTPClient httpRelay1;
   httpRelay1.begin(client, relay1URL);
@@ -158,5 +154,6 @@ void loop() {
     Serial.println(httpResponseCodeRelay2);
   }
   httpRelay2.end();
+  */
   delay(100); 
 }
