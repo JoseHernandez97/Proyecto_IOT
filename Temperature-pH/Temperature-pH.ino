@@ -6,18 +6,22 @@
 #include <ArduinoJson.h>
 
 #define ONE_WIRE_BUS D2
-#define SENSOR_INTERVAL 10000 //300000    // Tiempo de lectura sensores
+#define SENSOR_INTERVAL 300000 //300000    // Tiempo de lectura sensores
 #define RELAY_1_PIN D5            // Relé 1
 #define RELAY_2_PIN D6            // Relé 2
-#define RELAY_ON LOW              // Rele Apagado
-#define RELAY_OFF HIGH            // Rele Encendido
+#define RELAY_ON LOW              // Rele Encendido
+#define RELAY_OFF HIGH            // Rele Apagado
 
-const char* ssid = "Comunicate-Leon";
-const char* password = "darkshadow2125.";
+//const char* ssid = "Comunicate-Leon";
+//const char* password = "darkshadow2125.";
+
+const char* ssid = "SweetAntonella";
+const char* password = "ancamacho";
 
 const char* serverURL = "http://monitoreos.purplelabsoft.com/insert/";
 const char* relay1URL = "http://monitoreos.purplelabsoft.com/componente/Bomba";
 const char* relay2URL = "http://monitoreos.purplelabsoft.com/componente/Aspersor";
+const char* modeURL = "http://monitoreos.purplelabsoft.com/componente/Automatico";
 
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
@@ -28,7 +32,7 @@ float pH_calibration_offset = -5.5;
 
 unsigned long lastSensorTime = 0;
 unsigned long lastSendTime = 0;
-
+int manualValue = 0; // Variable para almacenar el modo manual o automático
 
 WiFiClient client; // Declarar instancia de WiFiClient fuera del bucle loop
 
@@ -37,7 +41,10 @@ void setup() {
   pinMode(pH_pin, INPUT);
   pinMode(RELAY_1_PIN, OUTPUT);
   pinMode(RELAY_2_PIN, OUTPUT);
-  
+
+  digitalWrite(RELAY_1_PIN, RELAY_OFF);
+  digitalWrite(RELAY_2_PIN, RELAY_OFF);
+
   WiFi.begin(ssid, password);
   sensors.begin();
 
@@ -51,6 +58,29 @@ void setup() {
 void loop() {
   unsigned long currentTime = millis();
 
+  // Obtener el modo de control (manual o automático) desde la endpoint
+  HTTPClient httpMode;
+  httpMode.begin(client, modeURL);
+  int httpResponseCodeMode = httpMode.GET();
+  if (httpResponseCodeMode > 0) {
+    String responseMode = httpMode.getString();
+    Serial.println("Modo");
+    Serial.println(httpResponseCodeMode);
+
+    // JSON para el modo
+    DynamicJsonDocument jsonMode(256);
+    deserializeJson(jsonMode, responseMode);
+
+    // Obtener el valor de "modo" (manual o automático)
+    manualValue = jsonMode[0]["estado"];
+    Serial.println(manualValue);
+  } else {
+    Serial.print("Error en la solicitud. Código de error HTTP: ");
+    Serial.println(httpResponseCodeMode);
+  }
+  httpMode.end();
+
+  
   // Lectura Sensores (Cada 3S )
   if (currentTime - lastSensorTime >= SENSOR_INTERVAL) {
     sensors.requestTemperatures();
@@ -61,18 +91,21 @@ void loop() {
     pH_value += pH_calibration_offset;
     lastSensorTime = currentTime;
 
-    // Rele 1 Temperatura
-    if (tempC >= 30.0) {
-      digitalWrite(RELAY_1_PIN, RELAY_ON);
-    } else {
-      digitalWrite(RELAY_1_PIN, RELAY_OFF);
-    }
+    // Control de los reles en modo automático
+    if (manualValue == 1) {
+      // Rele 1 Temperatura
+      if (tempC >= 30.0) {
+        digitalWrite(RELAY_1_PIN, RELAY_ON);
+      } else {
+        digitalWrite(RELAY_1_PIN, RELAY_OFF);
+      }
 
-    // Rele 2 pH
-    if (pH_value <= 6.0) {
-      digitalWrite(RELAY_2_PIN, RELAY_ON);
-    } else {
-      digitalWrite(RELAY_2_PIN, RELAY_OFF);
+      // Rele 2 pH
+      if (pH_value <= 6.0) {
+        digitalWrite(RELAY_2_PIN, RELAY_ON);
+      } else {
+        digitalWrite(RELAY_2_PIN, RELAY_OFF);
+      }
     }
 
     Serial.print("Temperatura: ");
@@ -81,20 +114,21 @@ void loop() {
 
     Serial.print("pH: ");
     Serial.println(pH_value);
+
     String jsonData = "{";
     jsonData += "\"temperatura\": ";
-    jsonData += String(sensors.getTempCByIndex(0));
+    jsonData += String(tempC);
     jsonData += ", ";
     jsonData += "\"pH\": ";
     jsonData += String(pH_value);
     jsonData += "}";
 
-    // Conexion Servidor
+    // Conexión al servidor para enviar los datos
     HTTPClient http;
     http.begin(client, serverURL);
     http.addHeader("Content-Type", "application/json");
 
-    // Envio JSON a API
+    // Envío JSON a la API
     int httpResponseCode = http.POST(jsonData);
 
     if (httpResponseCode > 0) {
@@ -106,57 +140,67 @@ void loop() {
     }
     http.end();
   }
-  // Recibir JSON para el relé 1
-  HTTPClient httpRelay1;
-  httpRelay1.begin(client, relay1URL);
-  int httpResponseCodeRelay1 = httpRelay1.GET();
-  if (httpResponseCodeRelay1 > 0) {
-    String responseRelay1 = httpRelay1.getString(); 
-    Serial.println("Rele 1");
-    Serial.println(httpResponseCodeRelay1);
-    //  JSON para el relé 1
-    DynamicJsonDocument jsonRelay1(256);
-    deserializeJson(jsonRelay1, responseRelay1);
-    int relay1Value = jsonRelay1["estado"];
-    Serial.println(relay1Value);
 
-    // Controlar el relé 1 
-    if (relay1Value == 1) {
-      digitalWrite(RELAY_1_PIN, RELAY_ON);
+  // Control de los reles en modo manual
+  if (manualValue == 0) {
+    // Recibir JSON para el relé 1
+    HTTPClient httpRelay1;
+    httpRelay1.begin(client, relay1URL);
+    int httpResponseCodeRelay1 = httpRelay1.GET();
+    if (httpResponseCodeRelay1 > 0) {
+      String responseRelay1 = httpRelay1.getString();
+      Serial.println("Rele 1");
+      Serial.println(httpResponseCodeRelay1);
+
+      // JSON para el relé 1 (Arreglo de JSON)
+      DynamicJsonDocument jsonRelay1(256);
+      deserializeJson(jsonRelay1, responseRelay1);
+
+      // Obtener el valor de "estado" del primer elemento del arreglo
+      int relay1Value = jsonRelay1[0]["estado"];
+      Serial.println(relay1Value);
+
+      // Controlar el relé 1
+      if (relay1Value == 1) {
+        digitalWrite(RELAY_1_PIN, RELAY_ON);
+      } else {
+        digitalWrite(RELAY_1_PIN, RELAY_OFF);
+      }
     } else {
-      digitalWrite(RELAY_1_PIN, RELAY_OFF);
+      Serial.print("Error en la solicitud. Código de error HTTP: ");
+      Serial.println(httpResponseCodeRelay1);
     }
-  } else {
-    Serial.print("Error en la solicitud. Código de error HTTP: ");
-    Serial.println(httpResponseCodeRelay1);
-  }
-  httpRelay1.end();
+    httpRelay1.end();
 
-  // Recibir JSON para el relé 2
-  HTTPClient httpRelay2;
-  httpRelay2.begin(client, relay2URL);
-  int httpResponseCodeRelay2 = httpRelay2.GET();
-  if (httpResponseCodeRelay2 > 0) {
-    String responseRelay2 = httpRelay2.getString();
-    Serial.println("Rele 2");
-    Serial.println(httpResponseCodeRelay2);
+    // Recibir JSON para el relé 2
+    HTTPClient httpRelay2;
+    httpRelay2.begin(client, relay2URL);
+    int httpResponseCodeRelay2 = httpRelay2.GET();
+    if (httpResponseCodeRelay2 > 0) {
+      String responseRelay2 = httpRelay2.getString();
+      Serial.println("Rele 2");
+      Serial.println(httpResponseCodeRelay2);
 
-    // JSON  relé 2
-    DynamicJsonDocument jsonRelay2(256);
-    deserializeJson(jsonRelay2, responseRelay2);
-    int relay2Value = jsonRelay2["estado"];
-    Serial.println(relay2Value);
+      // JSON para el relé 2 (Arreglo de JSON)
+      DynamicJsonDocument jsonRelay2(256);
+      deserializeJson(jsonRelay2, responseRelay2);
 
-    // Controlar el relé 2
-    if (relay2Value == 1) {
-      digitalWrite(RELAY_2_PIN, RELAY_ON);
+      // Obtener el valor de "estado" del primer elemento del arreglo
+      int relay2Value = jsonRelay2[0]["estado"];
+      Serial.println(relay2Value);
+
+      // Controlar el relé 2
+      if (relay2Value == 1) {
+        digitalWrite(RELAY_2_PIN, RELAY_ON);
+      } else {
+        digitalWrite(RELAY_2_PIN, RELAY_OFF);
+      }
     } else {
-      digitalWrite(RELAY_2_PIN, RELAY_OFF);
+      Serial.print("Error en la solicitud. Código de error HTTP: ");
+      Serial.println(httpResponseCodeRelay2);
     }
-  } else {
-    Serial.print("Error en la solicitud. Código de error HTTP: ");
-    Serial.println(httpResponseCodeRelay2);
+    httpRelay2.end();
   }
-  httpRelay2.end();
-  delay(100); 
+
+  delay(100);
 }
