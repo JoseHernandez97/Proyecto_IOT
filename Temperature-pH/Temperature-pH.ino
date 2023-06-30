@@ -6,7 +6,7 @@
 #include <ArduinoJson.h>
 
 #define ONE_WIRE_BUS D2
-#define SENSOR_INTERVAL 3000 //300000    // Tiempo de lectura sensores (5 minutos)
+#define SENSOR_INTERVAL 10000 //300000    // Tiempo de lectura sensores
 #define RELAY_1_PIN D5            // Relé 1
 #define RELAY_2_PIN D6            // Relé 2
 #define RELAY_ON LOW              // Rele Apagado
@@ -16,8 +16,8 @@ const char* ssid = "Comunicate-Leon";
 const char* password = "darkshadow2125.";
 
 const char* serverURL = "http://monitoreos.purplelabsoft.com/insert/";
-const char* relay1URL = "endpoint encendido o pagado rele1";
-const char* relay2URL = "endpoint encendido o pagado rele2";
+const char* relay1URL = "http://monitoreos.purplelabsoft.com/componente/Bomba";
+const char* relay2URL = "http://monitoreos.purplelabsoft.com/componente/Aspersor";
 
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
@@ -106,18 +106,19 @@ void loop() {
     }
     http.end();
   }
-  /*
   // Recibir JSON para el relé 1
   HTTPClient httpRelay1;
   httpRelay1.begin(client, relay1URL);
   int httpResponseCodeRelay1 = httpRelay1.GET();
   if (httpResponseCodeRelay1 > 0) {
-    String responseRelay1 = httpRelay1.getString();
-    
+    String responseRelay1 = httpRelay1.getString(); 
+    Serial.println("Rele 1");
+    Serial.println(httpResponseCodeRelay1);
     //  JSON para el relé 1
     DynamicJsonDocument jsonRelay1(256);
     deserializeJson(jsonRelay1, responseRelay1);
-    int relay1Value = jsonRelay1["Value"];
+    int relay1Value = jsonRelay1["estado"];
+    Serial.println(relay1Value);
 
     // Controlar el relé 1 
     if (relay1Value == 1) {
@@ -137,11 +138,14 @@ void loop() {
   int httpResponseCodeRelay2 = httpRelay2.GET();
   if (httpResponseCodeRelay2 > 0) {
     String responseRelay2 = httpRelay2.getString();
+    Serial.println("Rele 2");
+    Serial.println(httpResponseCodeRelay2);
 
     // JSON  relé 2
     DynamicJsonDocument jsonRelay2(256);
     deserializeJson(jsonRelay2, responseRelay2);
-    int relay2Value = jsonRelay2["Value"];
+    int relay2Value = jsonRelay2["estado"];
+    Serial.println(relay2Value);
 
     // Controlar el relé 2
     if (relay2Value == 1) {
@@ -154,6 +158,5 @@ void loop() {
     Serial.println(httpResponseCodeRelay2);
   }
   httpRelay2.end();
-  */
   delay(100); 
 }
