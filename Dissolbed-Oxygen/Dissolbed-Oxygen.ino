@@ -1,14 +1,10 @@
-#include <OneWire.h>
-#include <DallasTemperature.h>
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
 #include <ESP8266HTTPClient.h>
 #include <ArduinoJson.h>
 
-#define ONE_WIRE_BUS D2
 #define SENSOR_INTERVAL 1000 //300000    // Tiempo de lectura sensores
 #define RELAY_1_PIN D5            // Relé 1
-#define RELAY_2_PIN D6            // Relé 2
 #define RELAY_ON LOW              // Rele Encendido
 #define RELAY_OFF HIGH            // Rele Apagado
 
@@ -18,35 +14,65 @@ const char* password = "darkshadow2125.";
 //const char* ssid = "SweetAntonella";
 //const char* password = "ancamacho";
 
-const char* serverURL = "http://monitoreos.purplelabsoft.com/insert/";
-const char* relay1URL = "http://monitoreos.purplelabsoft.com/componente/Bomba";
-const char* relay2URL = "http://monitoreos.purplelabsoft.com/componente/Aspersor";
+const char* serverURL = "http://monitoreos.purplelabsoft.com/insert/tumamaeshombre";
+const char* relay1URL = "http://monitoreos.purplelabsoft.com/componente/Aireador";
 const char* modeURL = "http://monitoreos.purplelabsoft.com/componente/Automatico";
-
-OneWire oneWire(ONE_WIRE_BUS);
-DallasTemperature sensors(&oneWire);
-
-const int pH_pin = A0;
-float pH_value;
-float pH_calibration_offset = -5.5;
 
 unsigned long lastSensorTime = 0;
 unsigned long lastSendTime = 0;
 int manualValue = 0; // Variable para almacenar el modo manual o automático
 
+#define DO_PIN A0
+
+#define VREF 5000    //VREF (mv)
+#define ADC_RES 1024 //ADC Resolution
+
+//Single-point calibration Mode=0
+//Two-point calibration Mode=1
+#define TWO_POINT_CALIBRATION 0
+
+#define READ_TEMP (25) //Current water temperature ℃, Or temperature sensor function
+
+//Single point calibration needs to be filled CAL1_V and CAL1_T
+#define CAL1_V (1600) //mv
+#define CAL1_T (25)   //℃
+//Two-point calibration needs to be filled CAL2_V and CAL2_T
+//CAL1 High temperature point, CAL2 Low temperature point
+#define CAL2_V (1300) //mv
+#define CAL2_T (15)   //℃
+
+const uint16_t DO_Table[41] = {
+    14460, 14220, 13820, 13440, 13090, 12740, 12420, 12110, 11810, 11530,
+    11260, 11010, 10770, 10530, 10300, 10080, 9860, 9660, 9460, 9270,
+    9080, 8900, 8730, 8570, 8410, 8250, 8110, 7960, 7820, 7690,
+    7560, 7430, 7300, 7180, 7070, 6950, 6840, 6730, 6630, 6530, 6410};
+
+uint8_t Temperaturet;
+uint16_t ADC_Raw;
+uint16_t ADC_Voltage;
+uint16_t DO;
+uint16_t D_OXYGEN;
+
+int16_t readDO(uint32_t voltage_mv, uint8_t temperature_c)
+{
+#if TWO_POINT_CALIBRATION == 0
+  uint16_t V_saturation = (uint32_t)CAL1_V + (uint32_t)35 * temperature_c - (uint32_t)CAL1_T * 35;
+  return (voltage_mv * DO_Table[temperature_c] / V_saturation);
+#else
+  uint16_t V_saturation = (int16_t)((int8_t)temperature_c - CAL2_T) * ((uint16_t)CAL1_V - CAL2_V) / ((uint8_t)CAL1_T - CAL2_T) + CAL2_V;
+  return (voltage_mv * DO_Table[temperature_c] / V_saturation);
+#endif
+}
+
 WiFiClient client; // Declarar instancia de WiFiClient fuera del bucle loop
 
 void setup() {
   Serial.begin(9600);
-  pinMode(pH_pin, INPUT);
   pinMode(RELAY_1_PIN, OUTPUT);
-  pinMode(RELAY_2_PIN, OUTPUT);
 
   digitalWrite(RELAY_1_PIN, RELAY_OFF);
-  digitalWrite(RELAY_2_PIN, RELAY_OFF);
 
   WiFi.begin(ssid, password);
-  sensors.begin();
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(1000);
@@ -83,44 +109,29 @@ void loop() {
   
   // Lectura Sensores (Cada 3S )
   if (currentTime - lastSensorTime >= SENSOR_INTERVAL) {
-    sensors.requestTemperatures();
-    float tempC = sensors.getTempCByIndex(0);
-
-    int pH_raw = analogRead(pH_pin);
-    pH_value = map(pH_raw, 0, 1023, 0, 140) / 10.0;
-    pH_value += pH_calibration_offset;
+    Temperaturet = (uint8_t)READ_TEMP;
+    ADC_Raw = analogRead(DO_PIN);
+    ADC_Voltage = uint32_t(VREF) * ADC_Raw / ADC_RES;
+    D_OXYGEN = readDO(ADC_Voltage, Temperaturet) / 1000;
+    Serial.println("Oxygen mg/L:\t" + String(D_OXYGEN) + "\t");
     lastSensorTime = currentTime;
 
     // Control de los reles en modo automático
     if (manualValue == 1) {
-      // Rele 1 Temperatura
-      if (tempC >= 30.0) {
-        digitalWrite(RELAY_1_PIN, RELAY_ON);
-      } else {
-        digitalWrite(RELAY_1_PIN, RELAY_OFF);
+      // Rele 1 Oxigeno
+      if (D_OXYGEN < 5.0){
+        Serial.println(D_OXYGEN);
+        digitalWrite(RELAY_1_PIN, LOW); // Enciende el relé
       }
-
-      // Rele 2 pH
-      if (pH_value <= 6.0) {
-        digitalWrite(RELAY_2_PIN, RELAY_ON);
-      } else {
-        digitalWrite(RELAY_2_PIN, RELAY_OFF);
+      else if (D_OXYGEN > 9.0){
+        Serial.println(D_OXYGEN);
+        digitalWrite(RELAY_1_PIN, HIGH); // Apaga el relé
       }
     }
 
-    Serial.print("Temperatura: ");
-    Serial.print(tempC);
-    Serial.println(" °C");
-
-    Serial.print("pH: ");
-    Serial.println(pH_value);
-
     String jsonData = "{";
-    jsonData += "\"temperatura\": ";
-    jsonData += String(tempC);
-    jsonData += ", ";
-    jsonData += "\"pH\": ";
-    jsonData += String(pH_value);
+    jsonData += "\"oxigeno\": ";
+    jsonData += String(D_OXYGEN);
     jsonData += "}";
 
     // Conexión al servidor para enviar los datos
@@ -171,36 +182,6 @@ void loop() {
       Serial.println(httpResponseCodeRelay1);
     }
     httpRelay1.end();
-
-    // Recibir JSON para el relé 2
-    HTTPClient httpRelay2;
-    httpRelay2.begin(client, relay2URL);
-    int httpResponseCodeRelay2 = httpRelay2.GET();
-    if (httpResponseCodeRelay2 > 0) {
-      String responseRelay2 = httpRelay2.getString();
-      Serial.println("Rele 2");
-      Serial.println(httpResponseCodeRelay2);
-
-      // JSON para el relé 2 (Arreglo de JSON)
-      DynamicJsonDocument jsonRelay2(256);
-      deserializeJson(jsonRelay2, responseRelay2);
-
-      // Obtener el valor de "estado" del primer elemento del arreglo
-      int relay2Value = jsonRelay2[0]["estado"];
-      Serial.println(relay2Value);
-
-      // Controlar el relé 2
-      if (relay2Value == 1) {
-        digitalWrite(RELAY_2_PIN, RELAY_ON);
-      } else {
-        digitalWrite(RELAY_2_PIN, RELAY_OFF);
-      }
-    } else {
-      Serial.print("Error en la solicitud. Código de error HTTP: ");
-      Serial.println(httpResponseCodeRelay2);
     }
-    httpRelay2.end();
-  }
-
   delay(100);
 }
