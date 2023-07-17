@@ -6,7 +6,8 @@
 #include <ArduinoJson.h>
 
 #define ONE_WIRE_BUS D2
-#define SENSOR_INTERVAL 1000 //300000    // Tiempo de lectura sensores
+#define SENSOR_INTERVAL 1000    // Tiempo de lectura de sensores (1 segundos)
+#define SEND_INTERVAL 300000    // Tiempo de envío de datos (5 minutos)
 #define RELAY_1_PIN D5            // Relé 1
 #define RELAY_2_PIN D6            // Relé 2
 #define RELAY_ON LOW              // Rele Encendido
@@ -57,6 +58,8 @@ void setup() {
 
 void loop() {
   unsigned long currentTime = millis();
+  
+  float tempC; // Variable para almacenar la temperatura
 
   // Obtener el modo de control (manual o automático) desde la endpoint
   HTTPClient httpMode;
@@ -84,7 +87,7 @@ void loop() {
   // Lectura Sensores (Cada 3S )
   if (currentTime - lastSensorTime >= SENSOR_INTERVAL) {
     sensors.requestTemperatures();
-    float tempC = sensors.getTempCByIndex(0);
+    tempC = sensors.getTempCByIndex(0);
 
     int pH_raw = analogRead(pH_pin);
     pH_value = map(pH_raw, 0, 1023, 0, 140) / 10.0;
@@ -94,17 +97,20 @@ void loop() {
     // Control de los reles en modo automático
     if (manualValue == 1) {
       // Rele 1 Temperatura
-      if (tempC >= 30.0) {
+      if (tempC >= 32.0) {
         digitalWrite(RELAY_1_PIN, RELAY_ON);
-      } else {
+      } else if (tempC <= 25.0) {
         digitalWrite(RELAY_1_PIN, RELAY_OFF);
       }
 
+
       // Rele 2 pH
-      if (pH_value <= 6.0) {
+      if (pH_value < 6.0 || pH_value == 6.0) {
         digitalWrite(RELAY_2_PIN, RELAY_ON);
-      } else {
+      } else if (pH_value > 7.5 || pH_value == 7.5) {
         digitalWrite(RELAY_2_PIN, RELAY_OFF);
+      } else if (pH_value > 9.0) {
+        digitalWrite(RELAY_2_PIN, RELAY_ON);
       }
     }
 
@@ -114,7 +120,10 @@ void loop() {
 
     Serial.print("pH: ");
     Serial.println(pH_value);
+  }
 
+  // Envío de datos (Cada 5 minutos)
+  if (currentTime - lastSendTime >= SEND_INTERVAL) {
     String jsonData = "{";
     jsonData += "\"temperatura\": ";
     jsonData += String(tempC);
@@ -139,6 +148,8 @@ void loop() {
       Serial.println(httpResponseCode);
     }
     http.end();
+
+    lastSendTime = currentTime;
   }
 
   // Control de los reles en modo manual
