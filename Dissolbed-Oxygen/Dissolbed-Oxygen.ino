@@ -3,7 +3,8 @@
 #include <ESP8266HTTPClient.h>
 #include <ArduinoJson.h>
 
-#define SENSOR_INTERVAL 1000 //300000    // Tiempo de lectura sensores
+#define SENSOR_INTERVAL 1000 // Tiempo de lectura de sensores (1 segundo)
+#define SEND_INTERVAL 300000 // Tiempo de envío de datos (5 minutos en milisegundos)
 #define RELAY_1_PIN D5            // Relé 1
 #define RELAY_ON LOW              // Rele Encendido
 #define RELAY_OFF HIGH            // Rele Apagado
@@ -14,7 +15,7 @@ const char* password = "darkshadow2125.";
 //const char* ssid = "SweetAntonella";
 //const char* password = "ancamacho";
 
-const char* serverURL = "http://monitoreos.purplelabsoft.com/insert/tumamaeshombre";
+const char* serverURL = "http://monitoreos.purplelabsoft.com/insertOxigeno/";
 const char* relay1URL = "http://monitoreos.purplelabsoft.com/componente/Aireador";
 const char* modeURL = "http://monitoreos.purplelabsoft.com/componente/Automatico";
 
@@ -128,9 +129,10 @@ void loop() {
         digitalWrite(RELAY_1_PIN, HIGH); // Apaga el relé
       }
     }
-
-    String jsonData = "{";
-    jsonData += "\"oxigeno\": ";
+    // Envío de datos (Cada 5 minutos) 
+    if (currentTime - lastSendTime >= SEND_INTERVAL) {
+      String jsonData = "{";
+    jsonData += "\"ox\": ";
     jsonData += String(D_OXYGEN);
     jsonData += "}";
 
@@ -150,6 +152,9 @@ void loop() {
       Serial.println(httpResponseCode);
     }
     http.end();
+    lastSendTime = currentTime;
+      
+      }
   }
 
   // Control de los reles en modo manual
